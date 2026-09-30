@@ -167,7 +167,13 @@ function normLevel(value) {
 }
 
 const ALL_EFFORTS = ALL_LEVELS.map(effort);
-const FALLBACK_EFFORTS = ALL_EFFORTS; // 'support everything' last resort
+// Fallback when nothing declares levels: offer only levels every pi-ai model
+// can take without an explicit thinkingLevelMap entry. pi-ai requires an
+// explicit wire mapping for `xhigh`/`max` (getSupportedThinkingLevels returns
+// them only when mapped !== null/undefined); inventing them makes the picker
+// offer a level the request path then rejects ("does not support reasoning
+// effort"). Base levels default to supported, so they are the safe fallback.
+const FALLBACK_EFFORTS = ALL_LEVELS.filter((l) => l !== 'xhigh' && l !== 'max').map(effort);
 
 /**
  * Decide the reasoning block for a resolved model:
@@ -180,7 +186,15 @@ function augmentReasoning(provider, model, info, catalog) {
   if (info?.reasoning && Array.isArray(info.reasoning.efforts) && info.reasoning.efforts.length > 0) return undefined;
   const hit = catalog?.find(provider, model);
   const fromCatalog = hit ? effortsFromCatalogModel(hit) : undefined;
-  if (fromCatalog && fromCatalog.length > 0) return { efforts: fromCatalog };
+  // Injected efforts only describe the UI — the request path validates against
+  // pi-ai's own thinkingLevelMap, which requires an explicit mapping for
+  // xhigh/max. Levels we add beyond that map would be selectable but rejected
+  // on send, so strip them from every source we inject.
+  const safe = (list) => list.filter((e) => e.id !== 'xhigh' && e.id !== 'max');
+  if (fromCatalog && fromCatalog.length > 0) {
+    const kept = safe(fromCatalog);
+    return kept.length > 0 ? { efforts: kept } : undefined;
+  }
   if (hit && hit.reasoning === false) return undefined; // known non-reasoning: keep it clean
   return { efforts: FALLBACK_EFFORTS };
 }

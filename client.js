@@ -27,19 +27,22 @@ window.__ModuleLoader__.load({
 .dbr_status{color:var(--dsw-alias-label-tertiary);padding:8px;font-size:12px;line-height:18px}
 .dbr_back{display:flex;align-items:center;gap:4px;color:var(--dsw-alias-label-secondary);font-size:12px;padding:4px 8px;cursor:pointer;background:0 0;border:none}
 .dbr_back:hover{color:var(--dsw-alias-label-primary)}
-.dbr_seg{display:flex;gap:2px;padding:4px 6px;border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover,transparent);margin:2px 6px 4px}
-.dbr_segBtn{flex:1;min-width:0;border:none;cursor:pointer;border-radius:var(--dsw-radius-sm);padding:5px 4px;font-size:12px;line-height:16px;color:var(--dsw-alias-label-secondary);background:0 0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .1s,color .1s}
-.dbr_segBtn:hover:not(:disabled):not(.dbr_segOn){background:var(--dsw-alias-bg-module-platform,var(--dsw-alias-interactive-bg-hover))}
-.dbr_segOn{background:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-label-onAccent,#fff)}
-.dbr_segDefault{color:var(--dsw-alias-label-caption)}
-.dbr_track{position:relative;height:16px;margin:4px 10px 10px;flex:none;cursor:pointer;touch-action:none;user-select:none}
-.dbr_trackRail{position:absolute;left:0;right:0;top:50%;height:4px;margin-top:-2px;border-radius:2px;background:var(--dsw-alias-border-l1)}
-.dbr_trackFill{position:absolute;left:0;top:50%;height:4px;margin-top:-2px;border-radius:2px;background:var(--dsw-alias-state-business-primary)}
-.dbr_thumb{position:absolute;top:50%;width:14px;height:14px;margin-top:-7px;border-radius:50%;background:var(--dsw-alias-state-business-primary);border:2px solid var(--dsw-alias-bg-module-platform,#fff);transform:translateX(-50%);box-shadow:0 0 0 1px var(--dsw-alias-border-l1);cursor:grab;transition:left .08s}
-.dbr_track.dragging .dbr_thumb{cursor:grabbing;transition:none}
-.dbr_track:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}
-.dbr_ticks{position:absolute;left:0;right:0;top:50%;height:4px;pointer-events:none}
-.dbr_tick{position:absolute;top:50%;width:1px;height:4px;margin-top:-2px;background:var(--dsw-alias-label-dimmed);opacity:.5;transform:translateX(-0.5px)}
+.dbr_effortLabel{display:flex;align-items:center;justify-content:space-between;padding:6px 10px 2px}
+.dbr_effortName{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.dbr_effortDef{font-size:11px;color:var(--dsw-alias-label-caption);border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);padding:0 5px;line-height:16px}
+.dbr_track2{position:relative;height:22px;margin:6px 12px 2px;flex:none;cursor:pointer;touch-action:none;user-select:none}
+.dbr_rail{position:absolute;left:0;right:0;top:50%;height:6px;margin-top:-3px;border-radius:3px;background:var(--dsw-alias-interactive-bg-hover,var(--dsw-alias-border-l1))}
+.dbr_fill{position:absolute;left:0;top:50%;height:6px;margin-top:-3px;border-radius:3px;background:var(--dsw-alias-state-business-primary);transition:width .12s ease}
+.dbr_track2.dbr_dragging .dbr_fill,.dbr_track2.dbr_dragging .dbr_thumb2{transition:none}
+.dbr_dot{position:absolute;top:50%;width:5px;height:5px;margin-top:-2.5px;border-radius:50%;background:var(--dsw-alias-bg-module-platform,#fff);box-shadow:0 0 0 1.5px var(--dsw-alias-border-l1);transform:translateX(-50%);pointer-events:none}
+.dbr_dotOn{box-shadow:0 0 0 1.5px var(--dsw-alias-state-business-primary)}
+.dbr_thumb2{position:absolute;top:50%;width:16px;height:16px;margin-top:-8px;border-radius:50%;background:var(--dsw-alias-state-business-primary);border:2px solid var(--dsw-alias-bg-module-platform,#fff);transform:translateX(-50%);box-shadow:0 1px 4px rgba(0,0,0,.35),0 0 0 1px var(--dsw-alias-border-l1);cursor:grab;transition:left .12s ease}
+.dbr_track2.dbr_dragging .dbr_thumb2{cursor:grabbing}
+.dbr_track2:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px;border-radius:4px}
+.dbr_labs{display:flex;margin:0 12px 8px;padding:0}
+.dbr_lab{flex:1;min-width:0;border:none;background:0 0;cursor:pointer;padding:2px 0;font-size:10px;line-height:14px;color:var(--dsw-alias-label-dimmed);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dbr_lab:hover{color:var(--dsw-alias-label-secondary)}
+.dbr_labOn{color:var(--dsw-alias-state-business-primary);font-weight:600}
 `;
 
     function ensureStyle() {
@@ -81,6 +84,7 @@ window.__ModuleLoader__.load({
       const [pane, setPane] = React.useState('effort'); // 'effort' | 'model'
       const [query, setQuery] = React.useState('');
       const [menuPos, setMenuPos] = React.useState(null);
+      const [dragIdx, setDragIdx] = React.useState(null); // hoisted: unconditional hook
       const rootRef = React.useRef(null);
       const menuRef = React.useRef(null);
       const trackRef = React.useRef(null); // hoisted: hooks must run unconditionally
@@ -188,62 +192,65 @@ window.__ModuleLoader__.load({
           } else {
             const activeIdx = Math.max(0, efforts.findIndex((e) => e.id === activeEffort));
             const maxIdx = Math.max(0, efforts.length - 1);
-            const SHORT = { off: 'Off', minimal: 'Min', low: 'Low', medium: 'Med', high: 'High', xhigh: 'XHi', max: 'Max' };
-            const seg = h('div', { key: 'seg', className: 'dbr_seg', role: 'radiogroup', 'aria-label': '思考等级' },
-              efforts.map((e) => {
-                const active = e.id === activeEffort;
-                return h('button', {
-                  key: e.id, type: 'button', role: 'radio', 'aria-checked': active,
-                  className: 'dbr_segBtn' + (active ? ' dbr_segOn' : ''),
-                  onClick: () => chooseEffort(e.id),
-                  title: `${e.name ?? e.id}${e.id === defaultEffort ? ' (默认)' : ''}`,
-                }, SHORT[e.id] ?? e.name ?? e.id, e.id === defaultEffort ? h('span', { className: 'dbr_segDefault' }, ' ·') : null);
-              }));
+            const NICE = { off: '关闭', minimal: '极简', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最大' };
+            const nameOf = (e) => NICE[e.id] ?? e.name ?? e.id;
+            // local drag index so the thumb glides without firing select() per pixel;
+            // commit (select) only on pointerup / key.
+            const shownIdx = dragIdx ?? activeIdx;
             const idxFromX = (clientX) => {
               const r = trackRef.current?.getBoundingClientRect();
-              if (!r || r.width <= 0) return activeIdx;
+              if (!r || r.width <= 0) return shownIdx;
               const t = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
               return Math.round(t * maxIdx);
             };
-            const applyAt = (clientX) => {
-              const i = idxFromX(clientX);
-              if (i !== activeIdx && efforts[i]) chooseEffort(efforts[i].id);
-            };
+            const commit = (i) => { if (efforts[i] && i !== activeIdx) chooseEffort(efforts[i].id); };
             const onPointerDown = (ev) => {
               ev.preventDefault();
               const el = ev.currentTarget;
-              el.classList.add('dragging');
+              el.classList.add('dbr_dragging');
               el.setPointerCapture?.(ev.pointerId);
-              applyAt(ev.clientX);
-              const move = (e) => applyAt(e.clientX);
+              setDragIdx(idxFromX(ev.clientX));
+              const move = (e) => setDragIdx(idxFromX(e.clientX));
               const up = (e) => {
-                el.classList.remove('dragging');
+                const i = idxFromX(e.clientX);
+                el.classList.remove('dbr_dragging');
                 el.releasePointerCapture?.(e.pointerId);
                 window.removeEventListener('pointermove', move, true);
                 window.removeEventListener('pointerup', up, true);
+                setDragIdx(null);
+                commit(i);
               };
               window.addEventListener('pointermove', move, true);
               window.addEventListener('pointerup', up, true);
             };
             const onKey = (ev) => {
-              if (ev.key === 'ArrowLeft' || ev.key === 'ArrowDown') { ev.preventDefault(); if (activeIdx > 0) chooseEffort(efforts[activeIdx - 1].id); }
-              else if (ev.key === 'ArrowRight' || ev.key === 'ArrowUp') { ev.preventDefault(); if (activeIdx < maxIdx) chooseEffort(efforts[activeIdx + 1].id); }
-              else if (ev.key === 'Home') { ev.preventDefault(); chooseEffort(efforts[0].id); }
-              else if (ev.key === 'End') { ev.preventDefault(); chooseEffort(efforts[maxIdx].id); }
+              const n = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[ev.key];
+              if (n !== undefined) { ev.preventDefault(); commit(Math.min(maxIdx, Math.max(0, activeIdx + n))); }
+              else if (ev.key === 'Home') { ev.preventDefault(); commit(0); }
+              else if (ev.key === 'End') { ev.preventDefault(); commit(maxIdx); }
             };
-            const pct = maxIdx === 0 ? 0 : (activeIdx / maxIdx) * 100;
-            const track = h('div', {
-              key: 'track', ref: trackRef, className: 'dbr_track', role: 'slider', tabIndex: 0,
-              'aria-label': '思考等级', 'aria-valuemin': 0, 'aria-valuemax': maxIdx, 'aria-valuenow': activeIdx,
-              'aria-valuetext': efforts[activeIdx]?.name ?? String(activeIdx),
+            const pct = maxIdx === 0 ? 0 : (shownIdx / maxIdx) * 100;
+            const shown = efforts[shownIdx];
+            children.push(h('div', { key: 'lbl', className: 'dbr_effortLabel' },
+              h('span', { className: 'dbr_effortName' }, nameOf(shown)),
+              shown?.id === defaultEffort ? h('span', { className: 'dbr_effortDef' }, '默认') : null));
+            children.push(h('div', {
+              key: 'track', ref: trackRef, className: 'dbr_track2', role: 'slider', tabIndex: 0,
+              'aria-label': '思考等级', 'aria-valuemin': 0, 'aria-valuemax': maxIdx, 'aria-valuenow': shownIdx,
+              'aria-valuetext': nameOf(shown) ?? String(shownIdx),
               onPointerDown, onKeyDown: onKey,
             },
-              h('div', { className: 'dbr_trackRail' }),
-              h('div', { className: 'dbr_trackFill', style: { width: `${pct.toFixed(1)}%` } }),
-              h('div', { className: 'dbr_ticks' },
-                efforts.map((e, i) => maxIdx === 0 ? null : h('span', { key: e.id, className: 'dbr_tick', style: { left: `${((i / maxIdx) * 100).toFixed(1)}%` } }))),
-              h('div', { className: 'dbr_thumb', style: { left: `${pct.toFixed(1)}%` } }));
-            children.push(seg, track);
+              h('div', { className: 'dbr_rail' }),
+              h('div', { className: 'dbr_fill', style: { width: `${pct.toFixed(1)}%` } }),
+              efforts.map((e, i) => maxIdx === 0 ? null :
+                h('span', { key: e.id, className: 'dbr_dot' + (i <= shownIdx ? ' dbr_dotOn' : ''), style: { left: `${((i / maxIdx) * 100).toFixed(1)}%` } })),
+              h('div', { className: 'dbr_thumb2', style: { left: `${pct.toFixed(1)}%` } })));
+            // tick labels row
+            children.push(h('div', { key: 'labs', className: 'dbr_labs' },
+              efforts.map((e, i) => h('button', {
+                key: e.id, type: 'button', className: 'dbr_lab' + (i === shownIdx ? ' dbr_labOn' : ''),
+                onClick: () => commit(i), title: e.name ?? e.id,
+              }, nameOf(e)))));
           }
           children.push(h('div', { key: 'div', className: 'dbr_divider' }));
           children.push(h('button', { key: 'model', type: 'button', className: 'dbr_option', onClick: () => setPane('model') },
