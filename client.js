@@ -82,6 +82,7 @@ window.__ModuleLoader__.load({
       const [query, setQuery] = React.useState('');
       const rootRef = React.useRef(null);
       const menuRef = React.useRef(null);
+      const trackRef = React.useRef(null); // hoisted: hooks must run unconditionally
 
       React.useEffect(() => { if (open) load?.(); }, [open]);
       React.useEffect(() => {
@@ -179,7 +180,6 @@ window.__ModuleLoader__.load({
                   title: `${e.name ?? e.id}${e.id === defaultEffort ? ' (默认)' : ''}`,
                 }, SHORT[e.id] ?? e.name ?? e.id, e.id === defaultEffort ? h('span', { className: 'dbr_segDefault' }, ' ·') : null);
               }));
-            const trackRef = React.useRef(null);
             const idxFromX = (clientX) => {
               const r = trackRef.current?.getBoundingClientRect();
               if (!r || r.width <= 0) return activeIdx;
