@@ -240,9 +240,9 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots', 'modelDirectories', 'sessions'],
+      inject: ['slots', 'remote', 'remote.session', 'modelDirectories', 'sessions'],
       apply(ctx) {
-        ctx.inject(['slots', 'modelDirectories', 'sessions'], (scope) => {
+        ctx.inject(['slots', 'remote', 'remote.session', 'modelDirectories', 'sessions'], (scope) => {
           const models = scope.modelDirectories;
           const sessions = scope.sessions;
           try {
