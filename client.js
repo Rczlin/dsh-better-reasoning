@@ -60,6 +60,18 @@ window.__ModuleLoader__.load({
       return useSyncExternalStore((cb) => store.subscribe(cb), () => store.getSnapshot(), () => store.getSnapshot());
     }
 
+    // Minimal observable snapshot store: subscribe/getSnapshot/set for catalog + status.
+    function createStore() {
+      let snap = { status: 'idle', groups: [], error: undefined };
+      const subs = new Set();
+      return {
+        get: () => snap,
+        getSnapshot: () => snap,
+        subscribe: (cb) => { subs.add(cb); return () => subs.delete(cb); },
+        set: (patch) => { snap = { ...snap, ...patch }; for (const cb of subs) cb(); },
+      };
+    }
+
     function ModelEffortSelect(props) {
       ensureStyle();
       const { available, directory, load, select, locked } = props;
@@ -234,23 +246,45 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots', 'modelDirectories', 'sessions'],
+      inject: ['slots', 'sessions'],
       apply(ctx) {
-        ctx.inject(['slots', 'modelDirectories', 'sessions'], (scope) => {
-          const models = scope.modelDirectories;
+        ctx.inject(['slots', 'sessions'], (scope) => {
           const sessions = scope.sessions;
           scope.slots.inject('conversation.input.model', () => scope.slots.register({
             name: 'conversation.input.model',
             priority: -10,
-            locale: undefined,
             inject: (sessionId) => {
-              const directory = models.directoryFor(sessionId);
-              const available = sessions.subagentAddress(sessionId) === void 0;
+              const remote = ctx.get('remote')?.session ?? ctx.remote?.session;
+              const store = createStore();
+              const binding = () => sessions.binding?.(sessionId);
+              const currentSel = () => {
+                // modelSelection projection -> lastUsed/next hold the durable pick
+                const proj = binding()?.session?.projections?.faceOf?.('modelSelection');
+                const s = proj?.getSnapshot?.() ?? proj?.current ?? null;
+                return s?.pending ?? s?.next ?? s?.lastUsed ?? null;
+              };
+              const refresh = async () => {
+                store.set({ status: 'loading' });
+                try {
+                  const res = await remote?.modelCatalog?.();
+                  const groups = res?.value?.groups ?? res?.groups ?? [];
+                  store.set({ status: 'ready', groups });
+                } catch (error) {
+                  store.set({ status: 'error', error: String(error?.message ?? error) });
+                }
+              };
+              const sub = (cb) => {
+                const proj = binding()?.session?.projections?.faceOf?.('modelSelection');
+                return proj?.subscribe?.(cb) ?? (() => {});
+              };
               return {
-                available,
-                directory: directory.store,
-                load: () => { if (available) directory.load().catch(() => {}); },
-                select: (selection) => (available ? directory.select(selection) : Promise.resolve(undefined)),
+                available: sessions.subagentAddress?.(sessionId) === void 0,
+                directory: {
+                  getSnapshot: () => ({ ...store.get(), current: currentSel() }),
+                  subscribe: (cb) => { const a = store.subscribe(cb); const b = sub(cb); return () => { a(); b(); }; },
+                },
+                load: () => { refresh().catch(() => {}); },
+                select: async (sel) => { await remote?.selectModel?.(sel); refresh().catch(() => {}); },
               };
             },
           }, (slotProps) => h(ModelEffortSelect, slotProps)));
