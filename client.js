@@ -27,22 +27,24 @@ window.__ModuleLoader__.load({
 .dbr_status{color:var(--dsw-alias-label-tertiary);padding:8px;font-size:12px;line-height:18px}
 .dbr_back{display:flex;align-items:center;gap:4px;color:var(--dsw-alias-label-secondary);font-size:12px;padding:4px 8px;cursor:pointer;background:0 0;border:none}
 .dbr_back:hover{color:var(--dsw-alias-label-primary)}
-.dbr_effortLabel{display:flex;align-items:center;justify-content:space-between;padding:6px 10px 2px}
-.dbr_effortName{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}
-.dbr_effortDef{font-size:11px;color:var(--dsw-alias-label-caption);border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);padding:0 5px;line-height:16px}
-.dbr_track2{position:relative;height:22px;margin:6px 12px 2px;flex:none;cursor:pointer;touch-action:none;user-select:none}
-.dbr_rail{position:absolute;left:0;right:0;top:50%;height:6px;margin-top:-3px;border-radius:3px;background:var(--dsw-alias-interactive-bg-hover,var(--dsw-alias-border-l1))}
-.dbr_fill{position:absolute;left:0;top:50%;height:6px;margin-top:-3px;border-radius:3px;background:var(--dsw-alias-state-business-primary);transition:width .12s ease}
-.dbr_track2.dbr_dragging .dbr_fill,.dbr_track2.dbr_dragging .dbr_thumb2{transition:none}
-.dbr_dot{position:absolute;top:50%;width:5px;height:5px;margin-top:-2.5px;border-radius:50%;background:var(--dsw-alias-bg-module-platform,#fff);box-shadow:0 0 0 1.5px var(--dsw-alias-border-l1);transform:translateX(-50%);pointer-events:none}
-.dbr_dotOn{box-shadow:0 0 0 1.5px var(--dsw-alias-state-business-primary)}
-.dbr_thumb2{position:absolute;top:50%;width:16px;height:16px;margin-top:-8px;border-radius:50%;background:var(--dsw-alias-state-business-primary);border:2px solid var(--dsw-alias-bg-module-platform,#fff);transform:translateX(-50%);box-shadow:0 1px 4px rgba(0,0,0,.35),0 0 0 1px var(--dsw-alias-border-l1);cursor:grab;transition:left .12s ease}
-.dbr_track2.dbr_dragging .dbr_thumb2{cursor:grabbing}
-.dbr_track2:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px;border-radius:4px}
-.dbr_labs{display:flex;margin:0 12px 8px;padding:0}
-.dbr_lab{flex:1;min-width:0;border:none;background:0 0;cursor:pointer;padding:2px 0;font-size:10px;line-height:14px;color:var(--dsw-alias-label-dimmed);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dbr_effortLabel{display:flex;align-items:center;justify-content:space-between;padding:8px 12px 2px}
+.dbr_effortName{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary);transition:color .18s}
+.dbr_effortName[data-max]{background:linear-gradient(90deg,#b99ee2,#8f62d4);-webkit-background-clip:text;background-clip:text;color:transparent}
+.dbr_effortDef{font-size:11px;color:var(--dsw-alias-label-caption);border:1px solid var(--dsw-alias-border-l1);border-radius:999px;padding:1px 6px;line-height:15px}
+/* --- capsule slider (Claude-style) --- */
+.dbr_track2{position:relative;height:34px;margin:4px 12px 0;flex:none;cursor:pointer;touch-action:none;user-select:none;border-radius:999px;outline-offset:2px}
+.dbr_track2:focus-visible{outline:2px solid color-mix(in srgb,var(--dsw-alias-state-business-primary) 45%,transparent)}
+.dbr_rail{position:absolute;inset:8px 0;border-radius:999px;background:var(--dsw-alias-bg-layer-2,var(--dsw-alias-interactive-bg-hover,#2a2a2a));box-shadow:inset 0 1px 2px rgba(0,0,0,.28),inset 0 -1px 0 rgba(255,255,255,.04)}
+.dbr_fill{position:absolute;top:8px;bottom:8px;left:0;width:0;border-radius:999px 0 0 999px;background:linear-gradient(90deg,#dccdf0 0%,#c8b2e8 32%,#b99ee2 56%,#a583dd 78%,#8f62d4 100%);transition:width .18s cubic-bezier(.22,.61,.36,1);pointer-events:none}
+.dbr_track2.dbr_dragging .dbr_fill{transition:none}
+.dbr_dot{position:absolute;top:50%;left:0;width:5px;height:5px;border-radius:999px;background:rgba(255,255,255,.35);box-shadow:0 0 0 1px rgba(0,0,0,.25);transform:translate(-50%,-50%);pointer-events:none;transition:background .15s,opacity .15s}
+.dbr_dotOn{background:#fff;opacity:.95}
+.dbr_thumb2{position:absolute;top:50%;left:0;width:22px;height:22px;border-radius:999px;background:#f4f1f6;transform:translate(-50%,-50%);box-shadow:0 1px 3px rgba(0,0,0,.4),0 0 0 1px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.9);cursor:grab;transition:left .18s cubic-bezier(.22,.61,.36,1);pointer-events:none}
+.dbr_track2.dbr_dragging .dbr_thumb2{cursor:grabbing;transition:none;box-shadow:0 2px 6px rgba(0,0,0,.45),0 0 0 1px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.9)}
+.dbr_labs{display:flex;justify-content:space-between;margin:2px 12px 10px;padding:0}
+.dbr_lab{border:none;background:0 0;cursor:pointer;padding:2px 0;font-size:11px;line-height:14px;color:var(--dsw-alias-label-dimmed);white-space:nowrap;flex:1;text-align:center;transition:color .15s}
 .dbr_lab:hover{color:var(--dsw-alias-label-secondary)}
-.dbr_labOn{color:var(--dsw-alias-state-business-primary);font-weight:600}
+.dbr_labOn{color:var(--dsw-alias-label-primary);font-weight:600}
 `;
 
     function ensureStyle() {
@@ -230,21 +232,26 @@ window.__ModuleLoader__.load({
               else if (ev.key === 'End') { ev.preventDefault(); commit(maxIdx); }
             };
             const pct = maxIdx === 0 ? 0 : (shownIdx / maxIdx) * 100;
+            const frac = shownIdx / Math.max(1, maxIdx);
             const shown = efforts[shownIdx];
+            const isMax = shown?.id === 'max';
+            // thumb is 22px wide; keep its center inside the rail so it never
+            // overhangs the ends — offset by half its width at both extremes.
+            const px = (f) => `calc(11px + (100% - 22px) * ${f.toFixed(4)})`;
             children.push(h('div', { key: 'lbl', className: 'dbr_effortLabel' },
-              h('span', { className: 'dbr_effortName' }, nameOf(shown)),
+              h('span', { className: 'dbr_effortName', ...(isMax ? { 'data-max': '' } : {}) }, nameOf(shown)),
               shown?.id === defaultEffort ? h('span', { className: 'dbr_effortDef' }, '默认') : null));
             children.push(h('div', {
-              key: 'track', ref: trackRef, className: 'dbr_track2', role: 'slider', tabIndex: 0,
+              key: 'track', ref: trackRef, className: 'dbr_track2' + (isMax ? ' dbr_atMax' : ''), role: 'slider', tabIndex: 0,
               'aria-label': '思考等级', 'aria-valuemin': 0, 'aria-valuemax': maxIdx, 'aria-valuenow': shownIdx,
               'aria-valuetext': nameOf(shown) ?? String(shownIdx),
               onPointerDown, onKeyDown: onKey,
             },
               h('div', { className: 'dbr_rail' }),
-              h('div', { className: 'dbr_fill', style: { width: `${pct.toFixed(1)}%` } }),
+              h('div', { className: 'dbr_fill', style: { width: px(frac) } }),
               efforts.map((e, i) => maxIdx === 0 ? null :
-                h('span', { key: e.id, className: 'dbr_dot' + (i <= shownIdx ? ' dbr_dotOn' : ''), style: { left: `${((i / maxIdx) * 100).toFixed(1)}%` } })),
-              h('div', { className: 'dbr_thumb2', style: { left: `${pct.toFixed(1)}%` } })));
+                h('span', { key: e.id, className: 'dbr_dot' + (i <= shownIdx ? ' dbr_dotOn' : ''), style: { left: px(i / maxIdx) } })),
+              h('div', { className: 'dbr_thumb2', style: { left: px(frac) } })));
             // tick labels row
             children.push(h('div', { key: 'labs', className: 'dbr_labs' },
               efforts.map((e, i) => h('button', {
