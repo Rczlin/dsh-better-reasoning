@@ -72,6 +72,19 @@ window.__ModuleLoader__.load({
       };
     }
 
+    // Boundary: a render throw must not abdicate the slot entry for good.
+    class SafeSelect extends React.Component {
+      constructor(p) { super(p); this.state = { err: null }; }
+      static getDerivedStateFromError(err) { return { err }; }
+      render() {
+        if (this.state.err) {
+          return h('button', { type: 'button', className: 'dbr_trigger', disabled: true, title: String(this.state.err?.message ?? this.state.err) },
+            h('span', { className: 'dbr_triggerLabel' }, 'Model'));
+        }
+        return h(ModelEffortSelect, this.props);
+      }
+    }
+
     function ModelEffortSelect(props) {
       ensureStyle();
       const { available, directory, load, select, locked } = props;
@@ -256,12 +269,14 @@ window.__ModuleLoader__.load({
             inject: (sessionId) => {
               const remote = ctx.get('remote')?.session ?? ctx.remote?.session;
               const store = createStore();
+              const proj = () => binding()?.session?.projections?.faceOf?.('modelSelection');
               const binding = () => sessions.binding?.(sessionId);
-              const currentSel = () => {
-                // modelSelection projection -> lastUsed/next hold the durable pick
-                const proj = binding()?.session?.projections?.faceOf?.('modelSelection');
-                const s = proj?.getSnapshot?.() ?? proj?.current ?? null;
-                return s?.pending ?? s?.next ?? s?.lastUsed ?? null;
+              // Merge the durable selection into the store snapshot so getSnapshot
+              // returns a STABLE reference (useSyncExternalStore requires it).
+              const syncCurrent = () => {
+                const s = proj()?.getSnapshot?.() ?? proj()?.current ?? null;
+                const cur = s?.pending ?? s?.next ?? s?.lastUsed ?? null;
+                store.set({ current: cur });
               };
               const refresh = async () => {
                 store.set({ status: 'loading' });
@@ -273,21 +288,22 @@ window.__ModuleLoader__.load({
                   store.set({ status: 'error', error: String(error?.message ?? error) });
                 }
               };
-              const sub = (cb) => {
-                const proj = binding()?.session?.projections?.faceOf?.('modelSelection');
-                return proj?.subscribe?.(cb) ?? (() => {});
-              };
+              syncCurrent();
               return {
                 available: sessions.subagentAddress?.(sessionId) === void 0,
                 directory: {
-                  getSnapshot: () => ({ ...store.get(), current: currentSel() }),
-                  subscribe: (cb) => { const a = store.subscribe(cb); const b = sub(cb); return () => { a(); b(); }; },
+                  getSnapshot: () => store.getSnapshot(),
+                  subscribe: (cb) => {
+                    const a = store.subscribe(cb);
+                    const p = proj()?.subscribe?.(() => { syncCurrent(); cb(); });
+                    return () => { a(); p?.(); };
+                  },
                 },
                 load: () => { refresh().catch(() => {}); },
                 select: async (sel) => { await remote?.selectModel?.(sel); refresh().catch(() => {}); },
               };
             },
-          }, (slotProps) => h(ModelEffortSelect, slotProps)));
+          }, (slotProps) => h(SafeSelect, slotProps)));
         });
       },
     };
