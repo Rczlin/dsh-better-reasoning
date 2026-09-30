@@ -32,15 +32,18 @@ window.__ModuleLoader__.load({
 .dbr_effortName[data-max]{background:linear-gradient(90deg,#b99ee2,#8f62d4);-webkit-background-clip:text;background-clip:text;color:transparent}
 .dbr_effortDef{font-size:11px;color:var(--dsw-alias-label-caption);border:1px solid var(--dsw-alias-border-l1);border-radius:999px;padding:1px 6px;line-height:15px}
 /* --- capsule slider (Claude-style) --- */
-.dbr_track2{position:relative;height:34px;margin:4px 12px 0;flex:none;cursor:pointer;touch-action:none;user-select:none;border-radius:999px;outline-offset:2px}
+.dbr_track2{position:relative;height:40px;margin:4px 12px 0;flex:none;cursor:pointer;touch-action:none;user-select:none;border-radius:999px;outline-offset:2px}
 .dbr_track2:focus-visible{outline:2px solid color-mix(in srgb,var(--dsw-alias-state-business-primary) 45%,transparent)}
-.dbr_rail{position:absolute;inset:8px 0;border-radius:999px;background:var(--dsw-alias-bg-layer-2,var(--dsw-alias-interactive-bg-hover,#2a2a2a));box-shadow:inset 0 1px 2px rgba(0,0,0,.28),inset 0 -1px 0 rgba(255,255,255,.04)}
-.dbr_fill{position:absolute;top:8px;bottom:8px;left:0;width:0;border-radius:999px 0 0 999px;background:linear-gradient(90deg,#dccdf0 0%,#c8b2e8 32%,#b99ee2 56%,#a583dd 78%,#8f62d4 100%);transition:width .18s cubic-bezier(.22,.61,.36,1);pointer-events:none}
+.dbr_rail{position:absolute;inset:7px 0;border-radius:999px;background:var(--dsw-alias-bg-layer-2,var(--dsw-alias-interactive-bg-hover,#2a2a2a));box-shadow:inset 0 1px 2px rgba(0,0,0,.28),inset 0 -1px 0 rgba(255,255,255,.04)}
+.dbr_fill{position:absolute;top:7px;bottom:7px;left:0;width:0;border-radius:999px 0 0 999px;background:linear-gradient(90deg,#dccdf0 0%,#c8b2e8 32%,#b99ee2 56%,#a583dd 78%,#8f62d4 100%);transition:width .18s cubic-bezier(.22,.61,.36,1);pointer-events:none}
 .dbr_track2.dbr_dragging .dbr_fill{transition:none}
 .dbr_dot{position:absolute;top:50%;left:0;width:5px;height:5px;border-radius:999px;background:rgba(255,255,255,.35);box-shadow:0 0 0 1px rgba(0,0,0,.25);transform:translate(-50%,-50%);pointer-events:none;transition:background .15s,opacity .15s}
 .dbr_dotOn{background:#fff;opacity:.95}
-.dbr_thumb2{position:absolute;top:50%;left:0;width:22px;height:22px;border-radius:999px;background:#f4f1f6;transform:translate(-50%,-50%);box-shadow:0 1px 3px rgba(0,0,0,.4),0 0 0 1px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.9);cursor:grab;transition:left .18s cubic-bezier(.22,.61,.36,1);pointer-events:none}
-.dbr_track2.dbr_dragging .dbr_thumb2{cursor:grabbing;transition:none;box-shadow:0 2px 6px rgba(0,0,0,.45),0 0 0 1px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.9)}
+.dbr_thumb2{position:absolute;top:50%;left:0;width:24px;height:26px;border-radius:8px;transform:translate(-50%,-50%);background:linear-gradient(180deg,#ffffff,#f6f3fb 52%,#ece7f5);border:1px solid rgba(76,70,65,.15);box-shadow:inset 0 1px 0 rgba(255,255,255,.95),inset 0 -1px 1px rgba(76,70,65,.05),0 1px 2px rgba(62,56,50,.12),0 4px 10px rgba(62,56,50,.08);cursor:grab;transition:left .18s cubic-bezier(.22,.61,.36,1),transform .18s;pointer-events:none}
+.dbr_thumb2::before,.dbr_thumb2::after{content:"";position:absolute;top:50%;width:1.5px;height:38%;border-radius:999px;background:rgba(76,70,65,.25);opacity:0;transform:translateY(-50%);transition:opacity .14s}
+.dbr_thumb2::before{left:42%}.dbr_thumb2::after{right:42%}
+.dbr_track2:hover .dbr_thumb2::before,.dbr_track2:hover .dbr_thumb2::after,.dbr_track2:focus-visible .dbr_thumb2::before,.dbr_track2:focus-visible .dbr_thumb2::after,.dbr_track2.dbr_dragging .dbr_thumb2::before,.dbr_track2.dbr_dragging .dbr_thumb2::after{opacity:1}
+.dbr_track2.dbr_dragging .dbr_thumb2{cursor:grabbing;transition:none;transform:translate(-50%,-50%) scale(.96)}
 .dbr_labs{display:flex;justify-content:space-between;margin:2px 12px 10px;padding:0}
 .dbr_lab{border:none;background:0 0;cursor:pointer;padding:2px 0;font-size:11px;line-height:14px;color:var(--dsw-alias-label-dimmed);white-space:nowrap;flex:1;text-align:center;transition:color .15s}
 .dbr_lab:hover{color:var(--dsw-alias-label-secondary)}
@@ -235,9 +238,9 @@ window.__ModuleLoader__.load({
             const frac = shownIdx / Math.max(1, maxIdx);
             const shown = efforts[shownIdx];
             const isMax = shown?.id === 'max';
-            // thumb is 22px wide; keep its center inside the rail so it never
+            // thumb is 24px wide; keep its center inside the rail so it never
             // overhangs the ends — offset by half its width at both extremes.
-            const px = (f) => `calc(11px + (100% - 22px) * ${f.toFixed(4)})`;
+            const px = (f) => `calc(12px + (100% - 24px) * ${f.toFixed(4)})`;
             children.push(h('div', { key: 'lbl', className: 'dbr_effortLabel' },
               h('span', { className: 'dbr_effortName', ...(isMax ? { 'data-max': '' } : {}) }, nameOf(shown)),
               shown?.id === defaultEffort ? h('span', { className: 'dbr_effortDef' }, '默认') : null));
