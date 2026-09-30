@@ -32,8 +32,14 @@ window.__ModuleLoader__.load({
 .dbr_segBtn:hover:not(:disabled):not(.dbr_segOn){background:var(--dsw-alias-bg-module-platform,var(--dsw-alias-interactive-bg-hover))}
 .dbr_segOn{background:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-label-onAccent,#fff)}
 .dbr_segDefault{color:var(--dsw-alias-label-caption)}
-.dbr_track{position:relative;height:3px;border-radius:2px;background:var(--dsw-alias-border-l1);margin:2px 10px 8px;flex:none}
-.dbr_thumb{position:absolute;top:-3px;width:10px;height:10px;border-radius:50%;background:var(--dsw-alias-state-business-primary);transform:translateX(-50%);transition:left .12s}
+.dbr_track{position:relative;height:16px;margin:4px 10px 10px;flex:none;cursor:pointer;touch-action:none;user-select:none}
+.dbr_trackRail{position:absolute;left:0;right:0;top:50%;height:4px;margin-top:-2px;border-radius:2px;background:var(--dsw-alias-border-l1)}
+.dbr_trackFill{position:absolute;left:0;top:50%;height:4px;margin-top:-2px;border-radius:2px;background:var(--dsw-alias-state-business-primary)}
+.dbr_thumb{position:absolute;top:50%;width:14px;height:14px;margin-top:-7px;border-radius:50%;background:var(--dsw-alias-state-business-primary);border:2px solid var(--dsw-alias-bg-module-platform,#fff);transform:translateX(-50%);box-shadow:0 0 0 1px var(--dsw-alias-border-l1);cursor:grab;transition:left .08s}
+.dbr_track.dragging .dbr_thumb{cursor:grabbing;transition:none}
+.dbr_track:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}
+.dbr_ticks{position:absolute;left:0;right:0;top:50%;height:4px;pointer-events:none}
+.dbr_tick{position:absolute;top:50%;width:1px;height:4px;margin-top:-2px;background:var(--dsw-alias-label-dimmed);opacity:.5;transform:translateX(-0.5px)}
 `;
 
     function ensureStyle() {
@@ -153,7 +159,9 @@ window.__ModuleLoader__.load({
             children.push(h('div', { key: 'none', className: 'dbr_status' }, '该模型无可调思考等级'));
           } else {
             const activeIdx = Math.max(0, efforts.findIndex((e) => e.id === activeEffort));
+            const maxIdx = Math.max(0, efforts.length - 1);
             const SHORT = { off: 'Off', minimal: 'Min', low: 'Low', medium: 'Med', high: 'High', xhigh: 'XHi', max: 'Max' };
+            // segmented labels on top
             const seg = h('div', { key: 'seg', className: 'dbr_seg', role: 'radiogroup', 'aria-label': '思考等级' },
               efforts.map((e) => {
                 const active = e.id === activeEffort;
@@ -164,9 +172,52 @@ window.__ModuleLoader__.load({
                   title: `${e.name ?? e.id}${e.id === defaultEffort ? ' (默认)' : ''}`,
                 }, SHORT[e.id] ?? e.name ?? e.id, e.id === defaultEffort ? h('span', { className: 'dbr_segDefault' }, ' ·') : null);
               }));
-            const pct = efforts.length <= 1 ? 0 : (activeIdx / (efforts.length - 1)) * 100;
-            const track = h('div', { key: 'track', className: 'dbr_track', 'aria-hidden': true },
-              h('div', { className: 'dbr_thumb', style: { left: `calc(${(pct).toFixed(1)}%)` } }));
+            // draggable slider: pointer position -> nearest step
+            const trackRef = React.useRef(null);
+            const idxFromX = (clientX) => {
+              const r = trackRef.current?.getBoundingClientRect();
+              if (!r || r.width <= 0) return activeIdx;
+              const t = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+              return Math.round(t * maxIdx);
+            };
+            const applyAt = (clientX) => {
+              const i = idxFromX(clientX);
+              if (i !== activeIdx && efforts[i]) chooseEffort(efforts[i].id);
+            };
+            const onPointerDown = (ev) => {
+              ev.preventDefault();
+              const el = ev.currentTarget;
+              el.classList.add('dragging');
+              el.setPointerCapture?.(ev.pointerId);
+              applyAt(ev.clientX);
+              const move = (e) => applyAt(e.clientX);
+              const up = (e) => {
+                el.classList.remove('dragging');
+                el.releasePointerCapture?.(e.pointerId);
+                window.removeEventListener('pointermove', move, true);
+                window.removeEventListener('pointerup', up, true);
+              };
+              window.addEventListener('pointermove', move, true);
+              window.addEventListener('pointerup', up, true);
+            };
+            const onKey = (ev) => {
+              if (ev.key === 'ArrowLeft' || ev.key === 'ArrowDown') { ev.preventDefault(); if (activeIdx > 0) chooseEffort(efforts[activeIdx - 1].id); }
+              else if (ev.key === 'ArrowRight' || ev.key === 'ArrowUp') { ev.preventDefault(); if (activeIdx < maxIdx) chooseEffort(efforts[activeIdx + 1].id); }
+              else if (ev.key === 'Home') { ev.preventDefault(); chooseEffort(efforts[0].id); }
+              else if (ev.key === 'End') { ev.preventDefault(); chooseEffort(efforts[maxIdx].id); }
+            };
+            const pct = maxIdx === 0 ? 0 : (activeIdx / maxIdx) * 100;
+            const track = h('div', {
+              key: 'track', ref: trackRef, className: 'dbr_track', role: 'slider', tabIndex: 0,
+              'aria-label': '思考等级', 'aria-valuemin': 0, 'aria-valuemax': maxIdx, 'aria-valuenow': activeIdx,
+              'aria-valuetext': efforts[activeIdx]?.name ?? String(activeIdx),
+              onPointerDown, onKeyDown: onKey,
+            },
+              h('div', { className: 'dbr_trackRail' }),
+              h('div', { className: 'dbr_trackFill', style: { width: `${pct.toFixed(1)}%` } }),
+              h('div', { className: 'dbr_ticks' },
+                efforts.map((e, i) => maxIdx === 0 ? null : h('span', { key: e.id, className: 'dbr_tick', style: { left: `${((i / maxIdx) * 100).toFixed(1)}%` } }))),
+              h('div', { className: 'dbr_thumb', style: { left: `${pct.toFixed(1)}%` } }));
             children.push(seg, track);
           }
           children.push(h('div', { key: 'div', className: 'dbr_divider' }));
