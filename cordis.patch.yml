@@ -1,0 +1,3 @@
+- insert:
+    - id: dsh-better-reasoning
+      name: '@dsh-better-reasoning/plugin'

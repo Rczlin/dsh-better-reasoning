@@ -1,0 +1,41 @@
+{
+  "name": "@dsh-better-reasoning/plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Automatic thinking-level fallback for third-party (pi-ai) models + a Codex-style vertical model/effort picker for DeepSeek Harness.",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "icon": "./icon.svg",
+  "meta": {
+    "title": "Better Reasoning",
+    "description": "Auto reasoning-level fallback (declared → catalog → models.dev → all) plus a Codex-style model picker."
+  },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-commands",
+        "@deepseek-ai/dsh-client-ui-model-selection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}

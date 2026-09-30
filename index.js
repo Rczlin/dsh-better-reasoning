@@ -1,0 +1,328 @@
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { dirname, join } from 'node:path';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+
+// schemastery resolves against the Harness profile's node_modules, which a
+// linked bundle's real path cannot reach. Prefer the package's own dependency,
+// fall back to the profile copy so activation does not hard-fail.
+let z;
+try {
+  z = (await import('@deepseek-ai/schemastery')).default;
+} catch {
+  const candidates = [
+    process.env.DSH_PROFILE_DIR ? join(process.env.DSH_PROFILE_DIR, 'node_modules', '@deepseek-ai', 'schemastery', 'lib', 'index.mjs') : undefined,
+    join(MODULE_DIR, 'node_modules', '@deepseek-ai', 'schemastery', 'lib', 'index.mjs'),
+  ].filter(Boolean);
+  let loaded;
+  for (const p of candidates) {
+    try { loaded = (await import(pathToFileURL(p).href)).default; if (loaded) break; } catch { /* next */ }
+  }
+  z = loaded;
+}
+
+/** All reasoning levels the Harness understands, in escalation order. */
+const ALL_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+const LEVEL_SET = new Set(ALL_LEVELS);
+const DEFAULT_CATALOG_URL = 'https://models.dev/api.json';
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const CACHE_FILE = join(MODULE_DIR, 'models-dev-cache.json');
+
+const title = (s) => (typeof s === 'string' && s.length ? `${s.charAt(0).toUpperCase()}${s.slice(1)}` : s);
+const effort = (id) => ({ id, name: title(id) });
+
+/**
+ * In-memory mirror of the models.dev capability index plus fetch lifecycle.
+ * Persisted to CACHE_FILE so restarts reuse the last good fetch.
+ */
+function createCatalog(log) {
+  const state = {
+    /** @type {Map<string, object>} provider id -> provider entry */
+    providers: new Map(),
+    fetchedAt: 0,
+    loading: null,
+  };
+  const norm = (s) => String(s ?? '').toLowerCase();
+
+  function index(payload) {
+    state.providers.clear();
+    for (const provider of Object.values(payload ?? {})) {
+      if (!provider || typeof provider !== 'object' || !provider.models) continue;
+      const models = new Map();
+      for (const model of Object.values(provider.models)) {
+        if (!model || typeof model !== 'object' || !model.id) continue;
+        models.set(norm(model.id), model);
+        if (model.canonical_model_id) models.set(norm(model.canonical_model_id), model);
+      }
+      state.providers.set(norm(provider.id), { provider, models });
+      // index bare ids too, so a custom route whose provider id differs can still match
+      state.providers.set(`*${norm(provider.id)}`, { provider, models });
+    }
+    return state.providers.size;
+  }
+
+  async function fetchRemote(url) {
+    const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    if (!res.ok) throw new Error(`models.dev HTTP ${res.status}`);
+    return res.json();
+  }
+
+  async function persist(payload) {
+    try {
+      await mkdir(MODULE_DIR, { recursive: true });
+      await writeFile(CACHE_FILE, JSON.stringify({ fetchedAt: state.fetchedAt, payload }), 'utf8');
+    } catch (error) {
+      log?.warn?.('dsh-better-reasoning: failed to persist models.dev cache: %s', error?.message ?? error);
+    }
+  }
+
+  async function restore() {
+    try {
+      const raw = await readFile(CACHE_FILE, 'utf8');
+      const doc = JSON.parse(raw);
+      if (!doc || typeof doc !== 'object' || !doc.payload) return false;
+      index(doc.payload);
+      state.fetchedAt = Number(doc.fetchedAt) || 0;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function refresh(url) {
+    if (state.loading) return state.loading;
+    state.loading = (async () => {
+      const payload = await fetchRemote(url);
+      state.fetchedAt = Date.now();
+      index(payload);
+      await persist(payload);
+      return state.providers.size;
+    })().finally(() => { state.loading = null; });
+    return state.loading;
+  }
+
+  async function ensure(url, { force = false } = {}) {
+    const fresh = state.fetchedAt > 0 && Date.now() - state.fetchedAt < CACHE_TTL_MS;
+    if (fresh && !force) return { source: 'cache', providers: state.providers.size };
+    if (!state.providers.size) await restore();
+    const stillFresh = state.fetchedAt > 0 && Date.now() - state.fetchedAt < CACHE_TTL_MS;
+    if (!stillFresh || force || !state.providers.size) {
+      try {
+        const n = await refresh(url);
+        return { source: 'fetched', providers: n };
+      } catch (error) {
+        log?.warn?.('dsh-better-reasoning: models.dev fetch failed, using %s: %s',
+          state.providers.size ? 'stale cache' : 'fallback-all', error?.message ?? error);
+        return { source: state.providers.size ? 'stale' : 'none', providers: state.providers.size, error: String(error?.message ?? error) };
+      }
+    }
+    return { source: 'cache', providers: state.providers.size };
+  }
+
+  function find(provider, modelId) {
+    const p = norm(provider), m = norm(modelId);
+    const direct = state.providers.get(p) ?? state.providers.get(`*${p}`);
+    if (direct?.models?.has(m)) return direct.models.get(m);
+    // fallback: search every provider for the model id / canonical id
+    for (const entry of state.providers.values()) {
+      if (entry.models?.has(m)) return entry.models.get(m);
+    }
+    return undefined;
+  }
+
+  return { ensure, find, refresh, get fetchedAt() { return state.fetchedAt; }, get size() { return state.providers.size; } };
+}
+
+/** Map a models.dev model entry to Harness reasoning efforts, or undefined when it is not a reasoning model. */
+function effortsFromCatalogModel(model) {
+  if (!model || model.reasoning !== true) return undefined;
+  const options = Array.isArray(model.reasoning_options) ? model.reasoning_options : [];
+  const levels = new Set();
+  let sawToggle = false;
+  for (const opt of options) {
+    if (!opt || typeof opt !== 'object') continue;
+    if (opt.type === 'effort' && Array.isArray(opt.values)) {
+      for (const v of opt.values) {
+        const lv = normLevel(v);
+        if (lv) levels.add(lv);
+      }
+    } else if (opt.type === 'toggle') {
+      sawToggle = true;
+    }
+  }
+  if (levels.size === 0 && sawToggle) levels.add('high'); // a plain on/off thinking model
+  if (levels.size === 0) return undefined;
+  if (!levels.has('off')) levels.add('off');
+  return ALL_LEVELS.filter((l) => levels.has(l)).map(effort);
+}
+
+function normLevel(value) {
+  const v = String(value ?? '').toLowerCase();
+  if (v === 'none' || v === 'off') return 'off';
+  if (v === 'min' || v === 'minimal') return 'minimal';
+  if (LEVEL_SET.has(v)) return v;
+  if (v === 'max' || v === 'maximum') return 'max';
+  return undefined;
+}
+
+const ALL_EFFORTS = ALL_LEVELS.map(effort);
+const FALLBACK_EFFORTS = ALL_EFFORTS; // 'support everything' last resort
+
+/**
+ * Decide the reasoning block for a resolved model:
+ *  - keep whatever the adapter already declared (user reasoningEfforts / built-in catalog)
+ *  - else exact models.dev effort levels
+ *  - else all levels
+ * Returns the reasoning object to attach, or undefined to leave info untouched.
+ */
+function augmentReasoning(provider, model, info, catalog) {
+  if (info?.reasoning && Array.isArray(info.reasoning.efforts) && info.reasoning.efforts.length > 0) return undefined;
+  const hit = catalog?.find(provider, model);
+  const fromCatalog = hit ? effortsFromCatalogModel(hit) : undefined;
+  if (fromCatalog && fromCatalog.length > 0) return { efforts: fromCatalog };
+  if (hit && hit.reasoning === false) return undefined; // known non-reasoning: keep it clean
+  return { efforts: FALLBACK_EFFORTS };
+}
+
+function withReasoning(info, reasoning) {
+  if (!reasoning) return info;
+  return { ...info, reasoning };
+}
+
+/**
+ * Wrap LlmRuntime so every resolved model gains a reasoning capability when the
+ * adapter left it undefined. Wraps the public surface only; restores on dispose.
+ */
+function wrapLlm(llm, catalog, log) {
+  const originals = {
+    resolveModelInfo: llm.resolveModelInfo,
+    resolveModelInfoFor: llm.resolveModelInfoFor,
+    prepareCall: llm.prepareCall,
+    resolveCallFor: llm.resolveCallFor,
+  };
+  const patchInfo = (provider, model) => async (info) => {
+    try {
+      const reasoning = augmentReasoning(provider, model, info, catalog);
+      return withReasoning(info, reasoning);
+    } catch (error) {
+      log?.warn?.('dsh-better-reasoning: augment failed for %s/%s: %s', provider, model, error?.message ?? error);
+      return info;
+    }
+  };
+
+  llm.resolveModelInfo = async function (provider, model, signal) {
+    return patchInfo(provider, model)(await originals.resolveModelInfo.call(this, provider, model, signal));
+  };
+  llm.resolveModelInfoFor = async function (registration, model, signal) {
+    const provider = registration?.provider?.id ?? registration?.provider;
+    return patchInfo(provider, model)(await originals.resolveModelInfoFor.call(this, registration, model, signal));
+  };
+  llm.resolveCallFor = async function (registration, config, signal) {
+    const resolved = await originals.resolveCallFor.call(this, registration, config, signal);
+    if (resolved?.modelInfo) {
+      const provider = registration?.provider?.id ?? registration?.provider ?? config?.provider;
+      const reasoning = augmentReasoning(provider, config?.model, resolved.modelInfo, catalog);
+      if (reasoning) {
+        const modelInfo = withReasoning(resolved.modelInfo, reasoning);
+        return { ...resolved, modelInfo, config: this.resolveCallWithInfo(config, modelInfo).config };
+      }
+    }
+    return resolved;
+  };
+  const freeze = (o) => (typeof structuredClone === 'function' && typeof Object.freeze === 'function' ? Object.freeze(structuredClone(o)) : o);
+  const sameConfig = (a, b) => a === b || (
+    a?.provider === b?.provider && a?.model === b?.model && a?.reasoningEffort === b?.reasoningEffort &&
+    a?.temperature === b?.temperature && a?.maxTokens === b?.maxTokens
+  );
+
+  llm.prepareCall = async function (config, signal) {
+    const registration = this.registration(config.provider);
+    const adapterCall = await registration.adapter.prepareCall(config.provider, config.model, signal);
+    let modelInfo = this.normalizeModelInfo(registration, config.model, adapterCall.model);
+    try {
+      const reasoning = augmentReasoning(config.provider, config.model, modelInfo, catalog);
+      if (reasoning) modelInfo = withReasoning(modelInfo, reasoning);
+    } catch (error) {
+      log?.warn?.('dsh-better-reasoning: prepareCall augment failed for %s/%s: %s', config.provider, config.model, error?.message ?? error);
+    }
+    const resolved = this.resolveCallWithInfo(config, modelInfo);
+    const resolvedConfig = freeze(resolved.config);
+    const context = resolved.context === undefined ? undefined : freeze(resolved.context);
+    const adapterDefaults = freeze({
+      ...(config.reasoningEffort === undefined && resolvedConfig.reasoningEffort !== undefined ? { reasoningEffort: true } : {}),
+      ...(config.maxTokens === undefined && resolvedConfig.maxTokens !== undefined ? { maxTokens: true } : {}),
+    });
+    let dispatched = false;
+    return Object.freeze({
+      config: resolvedConfig,
+      retryPolicy: registration.retryPolicy,
+      adapterDefaults,
+      ...(context === undefined ? {} : { context }),
+      ...(modelInfo.inputModalities === undefined ? {} : { inputModalities: Object.freeze([...modelInfo.inputModalities]) }),
+      ...(modelInfo.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: modelInfo.systemPromptUpdate }),
+      ...(modelInfo.toolUpdate === undefined ? {} : { toolUpdate: modelInfo.toolUpdate }),
+      stream: (options) => {
+        if (dispatched) throw new Error('a prepared LLM call can only be dispatched once');
+        if (!sameConfig(options, resolvedConfig)) throw new Error('prepared LLM call config changed before adapter dispatch');
+        dispatched = true;
+        return this.streamWithRegistration(options, { registration, config: resolvedConfig, modelInfo, dispatch: (o) => adapterCall.stream(o) });
+      },
+    });
+  };
+  return () => {
+    for (const [key, fn] of Object.entries(originals)) {
+      if (typeof fn === 'function') llm[key] = fn;
+    }
+  };
+}
+
+export const inject = ['llm'];
+
+export const Config = z.object({
+  catalogUrl: z.string().default(DEFAULT_CATALOG_URL),
+  autoRefresh: z.boolean().default(true),
+});
+
+export function apply(ctx, config) {
+  const log = ctx.logger ?? console;
+  const catalog = createCatalog(log);
+  const catalogUrl = config?.catalogUrl?.get?.() ?? config?.catalogUrl ?? DEFAULT_CATALOG_URL;
+  const autoRefresh = config?.autoRefresh?.get?.() ?? config?.autoRefresh ?? true;
+
+  if (!ctx.llm || typeof ctx.llm.resolveModelInfo !== 'function') {
+    log?.warn?.('dsh-better-reasoning: ctx.llm unavailable or unexpected shape; reasoning fallback disabled');
+    return;
+  }
+
+  const unwrap = wrapLlm(ctx.llm, catalog, log);
+  ctx.on?.('dispose', unwrap);
+
+  if (autoRefresh !== false) {
+    catalog.ensure(catalogUrl).then((r) => {
+      log?.info?.('dsh-better-reasoning: capability catalog ready (source=%s, providers=%d)', r.source, r.providers ?? 0);
+    }).catch(() => {});
+  }
+
+  // Manual refresh: register `/better-reasoning-refresh` so a user can re-pull
+  // models.dev on demand without a restart.
+  try {
+    ctx.inject?.(['commands'], (scope) => {
+      const commands = scope.get('commands');
+      if (!commands?.register) return;
+      scope.effect(() => commands.register({
+        name: 'better-reasoning-refresh',
+        description: 'Re-fetch models.dev reasoning-level capability cache',
+        input: { hint: '' },
+        handler: async () => {
+          const r = await catalog.ensure(catalogUrl, { force: true });
+          const text = `reasoning capability catalog refreshed (source=${r.source}, providers=${r.providers ?? 0})`;
+          log?.info?.('dsh-better-reasoning: %s', text);
+          return { kind: 'success', text };
+        },
+      }));
+    });
+  } catch (error) {
+    log?.warn?.('dsh-better-reasoning: could not register refresh command: %s', error?.message ?? error);
+  }
+}
