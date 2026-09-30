@@ -80,6 +80,7 @@ window.__ModuleLoader__.load({
       const [open, setOpen] = React.useState(false);
       const [pane, setPane] = React.useState('effort'); // 'effort' | 'model'
       const [query, setQuery] = React.useState('');
+      const [menuPos, setMenuPos] = React.useState(null);
       const rootRef = React.useRef(null);
       const menuRef = React.useRef(null);
       const trackRef = React.useRef(null); // hoisted: hooks must run unconditionally
@@ -96,6 +97,25 @@ window.__ModuleLoader__.load({
         document.addEventListener('keydown', onKey, true);
         return () => { document.removeEventListener('mousedown', onDown, true); document.removeEventListener('keydown', onKey, true); };
       }, [open]);
+      // Position menu after mount so real offsetHeight/offsetWidth are known;
+      // opens upward like the shipped selector. Re-run on pane/size changes.
+      React.useEffect(() => {
+        if (!open) return;
+        const place = () => {
+          const rect = rootRef.current?.getBoundingClientRect();
+          if (!rect) return;
+          const lh = menuRef.current?.offsetHeight ?? 0;
+          const lw = menuRef.current?.offsetWidth ?? 0;
+          const M = 8;
+          const top = Math.max(M, Math.min(rect.top - 6 - lh, window.innerHeight - lh - M));
+          const left = Math.max(M, Math.min(rect.right - lw, window.innerWidth - lw - M));
+          setMenuPos({ top, left });
+        };
+        place();
+        window.addEventListener('scroll', place, true);
+        window.addEventListener('resize', place);
+        return () => { window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place); };
+      }, [open, pane, snap]);
 
       const current = snap?.current ?? null;
       const groups = snap?.groups ?? [];
@@ -129,8 +149,7 @@ window.__ModuleLoader__.load({
 
       let menu = null;
       if (open) {
-        const rect = rootRef.current?.getBoundingClientRect();
-        const style = rect ? { top: Math.max(8, rect.bottom + 4), left: Math.max(8, Math.min(rect.left, (window.innerWidth || 1000) - 432)) } : {};
+        const style = menuPos ? { top: menuPos.top, left: menuPos.left } : { visibility: 'hidden', top: 0, left: 0 };
         const children = [];
 
         if (pane === 'model') {
