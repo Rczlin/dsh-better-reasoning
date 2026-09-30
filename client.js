@@ -27,6 +27,13 @@ window.__ModuleLoader__.load({
 .dbr_status{color:var(--dsw-alias-label-tertiary);padding:8px;font-size:12px;line-height:18px}
 .dbr_back{display:flex;align-items:center;gap:4px;color:var(--dsw-alias-label-secondary);font-size:12px;padding:4px 8px;cursor:pointer;background:0 0;border:none}
 .dbr_back:hover{color:var(--dsw-alias-label-primary)}
+.dbr_seg{display:flex;gap:2px;padding:4px 6px;border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover,transparent);margin:2px 6px 4px}
+.dbr_segBtn{flex:1;min-width:0;border:none;cursor:pointer;border-radius:var(--dsw-radius-sm);padding:5px 4px;font-size:12px;line-height:16px;color:var(--dsw-alias-label-secondary);background:0 0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .1s,color .1s}
+.dbr_segBtn:hover:not(:disabled):not(.dbr_segOn){background:var(--dsw-alias-bg-module-platform,var(--dsw-alias-interactive-bg-hover))}
+.dbr_segOn{background:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-label-onAccent,#fff)}
+.dbr_segDefault{color:var(--dsw-alias-label-caption)}
+.dbr_track{position:relative;height:3px;border-radius:2px;background:var(--dsw-alias-border-l1);margin:2px 10px 8px;flex:none}
+.dbr_thumb{position:absolute;top:-3px;width:10px;height:10px;border-radius:50%;background:var(--dsw-alias-state-business-primary);transform:translateX(-50%);transition:left .12s}
 `;
 
     function ensureStyle() {
@@ -138,25 +145,30 @@ window.__ModuleLoader__.load({
           }
           children.push(h('div', { key: 'models', className: 'dbr_list' }, list.length ? list : h('div', { className: 'dbr_status' }, 'No models')));
         } else {
-          // effort pane: thinking levels on top, then a "Model ›" row
+          // effort pane: thinking levels as a horizontal segmented slider, then a "Model ›" row
           children.push(h('div', { key: 'sec', className: 'dbr_section' }, '思考等级'));
-          const opts = [];
           if (!current) {
-            opts.push(h('div', { key: 'none', className: 'dbr_status' }, 'Select a model first'));
+            children.push(h('div', { key: 'none', className: 'dbr_status' }, 'Select a model first'));
           } else if (efforts.length === 0) {
-            opts.push(h('div', { key: 'none', className: 'dbr_status' }, '该模型无可调思考等级'));
+            children.push(h('div', { key: 'none', className: 'dbr_status' }, '该模型无可调思考等级'));
           } else {
-            for (const e of efforts) {
-              const active = e.id === activeEffort;
-              opts.push(h('button', {
-                key: e.id, type: 'button', className: 'dbr_option', onClick: () => chooseEffort(e.id),
-              },
-                h('span', { className: 'dbr_check' }, active ? h(Check) : null),
-                h('span', { className: 'dbr_optionLabel' }, e.name ?? e.id),
-                e.id === defaultEffort ? h('span', { className: 'dbr_optionValue' }, '默认') : null));
-            }
+            const activeIdx = Math.max(0, efforts.findIndex((e) => e.id === activeEffort));
+            const SHORT = { off: 'Off', minimal: 'Min', low: 'Low', medium: 'Med', high: 'High', xhigh: 'XHi', max: 'Max' };
+            const seg = h('div', { key: 'seg', className: 'dbr_seg', role: 'radiogroup', 'aria-label': '思考等级' },
+              efforts.map((e) => {
+                const active = e.id === activeEffort;
+                return h('button', {
+                  key: e.id, type: 'button', role: 'radio', 'aria-checked': active,
+                  className: 'dbr_segBtn' + (active ? ' dbr_segOn' : ''),
+                  onClick: () => chooseEffort(e.id),
+                  title: `${e.name ?? e.id}${e.id === defaultEffort ? ' (默认)' : ''}`,
+                }, SHORT[e.id] ?? e.name ?? e.id, e.id === defaultEffort ? h('span', { className: 'dbr_segDefault' }, ' ·') : null);
+              }));
+            const pct = efforts.length <= 1 ? 0 : (activeIdx / (efforts.length - 1)) * 100;
+            const track = h('div', { key: 'track', className: 'dbr_track', 'aria-hidden': true },
+              h('div', { className: 'dbr_thumb', style: { left: `calc(${(pct).toFixed(1)}%)` } }));
+            children.push(seg, track);
           }
-          children.push(h('div', { key: 'efforts', className: 'dbr_list' }, opts));
           children.push(h('div', { key: 'div', className: 'dbr_divider' }));
           children.push(h('button', { key: 'model', type: 'button', className: 'dbr_option', onClick: () => setPane('model') },
             h('span', { className: 'dbr_optionLabel' }, '模型'),
