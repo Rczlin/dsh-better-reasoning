@@ -14,8 +14,8 @@ window.__ModuleLoader__.load({
 .dbr_triggerEffort{text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--dsw-alias-label-caption);flex-shrink:1000;overflow:hidden}
 .dbr_chevron{color:var(--dsw-alias-label-caption);flex:none;transition:transform .12s}
 .dbr_chevronOpen{transform:rotate(180deg)}
-.dbr_menu{z-index:1100;width:max-content;min-width:min(240px,calc(100vw - 32px));max-width:min(420px,calc(100vw - 32px));max-height:min(360px,calc(100vh - 96px));box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-primary);border:0;border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-module-platform,var(--dsw-alias-bg-elevated,#1e1e1e));flex-direction:column;padding:4px;display:flex;position:fixed;overflow:hidden}
-.dbr_section{flex-shrink:0;color:var(--dsw-alias-label-caption);font-size:11px;line-height:16px;padding:6px 8px 2px;text-transform:uppercase;letter-spacing:.04em}
+.dbr_menu{z-index:1100;width:max-content;min-width:min(260px,calc(100vw - 32px));max-width:min(420px,calc(100vw - 32px));max-height:min(360px,calc(100vh - 96px));box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-primary);border:0;border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-module-platform,var(--dsw-alias-bg-elevated,#1e1e1e));flex-direction:column;padding:4px;display:flex;position:fixed;overflow:hidden}
+.dbr_section{flex-shrink:0;color:var(--dsw-alias-label-caption);font-size:11px;line-height:16px;padding:6px 8px 2px;letter-spacing:.04em}
 .dbr_list{min-height:0;overflow-y:auto}
 .dbr_option{box-sizing:border-box;border-radius:var(--dsw-radius-md);width:100%;min-height:32px;color:inherit;text-align:left;cursor:pointer;background:0 0;border:none;outline:none;align-items:center;gap:6px;padding:5px 8px;display:flex;font-size:13px;line-height:18px}
 .dbr_option:hover:not(:disabled),.dbr_option:focus-visible{background:var(--dsw-alias-interactive-bg-hover)}
@@ -60,18 +60,6 @@ window.__ModuleLoader__.load({
       return useSyncExternalStore((cb) => store.subscribe(cb), () => store.getSnapshot(), () => store.getSnapshot());
     }
 
-    // Minimal observable snapshot store: subscribe/getSnapshot/set for catalog + status.
-    function createStore() {
-      let snap = { status: 'idle', groups: [], error: undefined };
-      const subs = new Set();
-      return {
-        get: () => snap,
-        getSnapshot: () => snap,
-        subscribe: (cb) => { subs.add(cb); return () => subs.delete(cb); },
-        set: (patch) => { snap = { ...snap, ...patch }; for (const cb of subs) cb(); },
-      };
-    }
-
     // Boundary: a render throw must not abdicate the slot entry for good.
     class SafeSelect extends React.Component {
       constructor(p) { super(p); this.state = { err: null }; }
@@ -110,10 +98,8 @@ window.__ModuleLoader__.load({
 
       const current = snap?.current ?? null;
       const groups = snap?.groups ?? [];
-      const pending = snap?.pending;
       const disabled = locked || available === false || snap?.status === 'selecting';
 
-      // find reasoning metadata for the current selection from the catalog groups
       const findModel = (provider, modelId) => {
         for (const g of groups) for (const m of g.models ?? []) if (g.id === provider && m.id === modelId) return m;
         return undefined;
@@ -126,10 +112,7 @@ window.__ModuleLoader__.load({
       const modelLabel = currentModel?.name ?? current?.model ?? 'Select model';
       const triggerLabel = effortLabel ? `${modelLabel} · ${effortLabel}` : modelLabel;
 
-      const chooseModel = async (provider, model) => {
-        await select?.({ provider, model });
-        setPane('effort');
-      };
+      const chooseModel = async (provider, model) => { await select?.({ provider, model }); setPane('effort'); };
       const chooseEffort = async (id) => {
         if (!current) return;
         await select?.({ provider: current.provider, model: current.model, reasoningEffort: id });
@@ -176,7 +159,7 @@ window.__ModuleLoader__.load({
           }
           children.push(h('div', { key: 'models', className: 'dbr_list' }, list.length ? list : h('div', { className: 'dbr_status' }, 'No models')));
         } else {
-          // effort pane: thinking levels as a horizontal segmented slider, then a "Model ›" row
+          // effort pane: segmented labels + draggable slider, then a "Model ›" row
           children.push(h('div', { key: 'sec', className: 'dbr_section' }, '思考等级'));
           if (!current) {
             children.push(h('div', { key: 'none', className: 'dbr_status' }, 'Select a model first'));
@@ -186,7 +169,6 @@ window.__ModuleLoader__.load({
             const activeIdx = Math.max(0, efforts.findIndex((e) => e.id === activeEffort));
             const maxIdx = Math.max(0, efforts.length - 1);
             const SHORT = { off: 'Off', minimal: 'Min', low: 'Low', medium: 'Med', high: 'High', xhigh: 'XHi', max: 'Max' };
-            // segmented labels on top
             const seg = h('div', { key: 'seg', className: 'dbr_seg', role: 'radiogroup', 'aria-label': '思考等级' },
               efforts.map((e) => {
                 const active = e.id === activeEffort;
@@ -197,7 +179,6 @@ window.__ModuleLoader__.load({
                   title: `${e.name ?? e.id}${e.id === defaultEffort ? ' (默认)' : ''}`,
                 }, SHORT[e.id] ?? e.name ?? e.id, e.id === defaultEffort ? h('span', { className: 'dbr_segDefault' }, ' ·') : null);
               }));
-            // draggable slider: pointer position -> nearest step
             const trackRef = React.useRef(null);
             const idxFromX = (clientX) => {
               const r = trackRef.current?.getBoundingClientRect();
@@ -259,51 +240,29 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots', 'sessions'],
+      inject: ['slots', 'modelDirectories', 'sessions'],
       apply(ctx) {
-        ctx.inject(['slots', 'sessions'], (scope) => {
+        ctx.inject(['slots', 'modelDirectories', 'sessions'], (scope) => {
+          const models = scope.modelDirectories;
           const sessions = scope.sessions;
-          scope.slots.inject('conversation.input.model', () => scope.slots.register({
-            name: 'conversation.input.model',
-            priority: -10,
-            inject: (sessionId) => {
-              const remote = ctx.get('remote')?.session ?? ctx.remote?.session;
-              const store = createStore();
-              const proj = () => binding()?.session?.projections?.faceOf?.('modelSelection');
-              const binding = () => sessions.binding?.(sessionId);
-              // Merge the durable selection into the store snapshot so getSnapshot
-              // returns a STABLE reference (useSyncExternalStore requires it).
-              const syncCurrent = () => {
-                const s = proj()?.getSnapshot?.() ?? proj()?.current ?? null;
-                const cur = s?.pending ?? s?.next ?? s?.lastUsed ?? null;
-                store.set({ current: cur });
-              };
-              const refresh = async () => {
-                store.set({ status: 'loading' });
-                try {
-                  const res = await remote?.modelCatalog?.();
-                  const groups = res?.value?.groups ?? res?.groups ?? [];
-                  store.set({ status: 'ready', groups });
-                } catch (error) {
-                  store.set({ status: 'error', error: String(error?.message ?? error) });
-                }
-              };
-              syncCurrent();
-              return {
-                available: sessions.subagentAddress?.(sessionId) === void 0,
-                directory: {
-                  getSnapshot: () => store.getSnapshot(),
-                  subscribe: (cb) => {
-                    const a = store.subscribe(cb);
-                    const p = proj()?.subscribe?.(() => { syncCurrent(); cb(); });
-                    return () => { a(); p?.(); };
-                  },
-                },
-                load: () => { refresh().catch(() => {}); },
-                select: async (sel) => { await remote?.selectModel?.(sel); refresh().catch(() => {}); },
-              };
-            },
-          }, (slotProps) => h(SafeSelect, slotProps)));
+          try {
+            scope.slots.inject('conversation.input.model', () => scope.slots.register({
+              name: 'conversation.input.model',
+              priority: -10,
+              inject: (sessionId) => {
+                const directory = models.directoryFor(sessionId);
+                const available = sessions.subagentAddress(sessionId) === void 0;
+                return {
+                  available,
+                  directory: directory.store,
+                  load: () => { if (available) directory.load().catch(() => {}); },
+                  select: (selection) => (available ? directory.select(selection) : Promise.resolve(undefined)),
+                };
+              },
+            }, (slotProps) => h(SafeSelect, slotProps)));
+          } catch (e) {
+            try { console?.warn?.('dsh-better-reasoning: slot inject failed', e); } catch {}
+          }
         });
       },
     };
