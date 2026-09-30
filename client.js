@@ -44,10 +44,6 @@ window.__ModuleLoader__.load({
 .dbr_thumb2::before{left:42%}.dbr_thumb2::after{right:42%}
 .dbr_track2:hover .dbr_thumb2::before,.dbr_track2:hover .dbr_thumb2::after,.dbr_track2:focus-visible .dbr_thumb2::before,.dbr_track2:focus-visible .dbr_thumb2::after,.dbr_track2.dbr_dragging .dbr_thumb2::before,.dbr_track2.dbr_dragging .dbr_thumb2::after{opacity:1}
 .dbr_track2.dbr_dragging .dbr_thumb2{cursor:grabbing;transition:none;transform:translate(-50%,-50%) scale(.96)}
-.dbr_labs{display:flex;justify-content:space-between;margin:2px 12px 10px;padding:0}
-.dbr_lab{border:none;background:0 0;cursor:pointer;padding:2px 0;font-size:11px;line-height:14px;color:var(--dsw-alias-label-dimmed);white-space:nowrap;flex:1;text-align:center;transition:color .15s}
-.dbr_lab:hover{color:var(--dsw-alias-label-secondary)}
-.dbr_labOn{color:var(--dsw-alias-label-primary);font-weight:600}
 `;
 
     function ensureStyle() {
@@ -197,8 +193,7 @@ window.__ModuleLoader__.load({
           } else {
             const activeIdx = Math.max(0, efforts.findIndex((e) => e.id === activeEffort));
             const maxIdx = Math.max(0, efforts.length - 1);
-            const NICE = { off: '关闭', minimal: '极简', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最大' };
-            const nameOf = (e) => NICE[e.id] ?? e.name ?? e.id;
+            const nameOf = (e) => e.name ?? e.id;
             // local drag index so the thumb glides without firing select() per pixel;
             // commit (select) only on pointerup / key.
             const shownIdx = dragIdx ?? activeIdx;
@@ -255,12 +250,6 @@ window.__ModuleLoader__.load({
               efforts.map((e, i) => maxIdx === 0 ? null :
                 h('span', { key: e.id, className: 'dbr_dot' + (i <= shownIdx ? ' dbr_dotOn' : ''), style: { left: px(i / maxIdx) } })),
               h('div', { className: 'dbr_thumb2', style: { left: px(frac) } })));
-            // tick labels row
-            children.push(h('div', { key: 'labs', className: 'dbr_labs' },
-              efforts.map((e, i) => h('button', {
-                key: e.id, type: 'button', className: 'dbr_lab' + (i === shownIdx ? ' dbr_labOn' : ''),
-                onClick: () => commit(i), title: e.name ?? e.id,
-              }, nameOf(e)))));
           }
           children.push(h('div', { key: 'div', className: 'dbr_divider' }));
           children.push(h('button', { key: 'model', type: 'button', className: 'dbr_option', onClick: () => setPane('model') },
