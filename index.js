@@ -191,6 +191,46 @@ function withReasoning(info, reasoning) {
 }
 
 /**
+ * Close the describe/send gap: `augmentReasoning` only edits the modelInfo the
+ * UI reads, but pi-ai validates `options.reasoningEffort` against the adapter's
+ * internal `model.thinkingLevelMap` — a model with no declared reasoningEfforts
+ * (custom provider entries) has no xhigh/max mapping, so offering them makes the
+ * picker selectable-then-rejected ("does not support reasoning effort").
+ * Patch the resolved descriptor's map in place: wire value = level name, which
+ * OpenAI-style routes send verbatim. Returns the descriptor when patched.
+ */
+function syncThinkingLevelMap(registration, provider, model, reasoning, log) {
+  const efforts = reasoning?.efforts;
+  if (!Array.isArray(efforts) || efforts.length === 0) return;
+  try {
+    const adapter = registration?.adapter;
+    const snapshot = typeof adapter?.current === 'function' ? adapter.current() : undefined;
+    const resolved = snapshot?.models?.getModel?.(provider, model);
+    if (!resolved) return;
+    const map = { ...(resolved.thinkingLevelMap ?? {}) };
+    let changed = false;
+    for (const e of efforts) {
+      const level = e?.id;
+      if (!LEVEL_SET.has(level)) continue;
+      // off = parameter absent; don't give it a wire value
+      if (level === 'off') continue;
+      if (map[level] === undefined || map[level] === null) {
+        map[level] = level;
+        changed = true;
+      }
+    }
+    // Absent map keys default to supported for base levels, so the map starts
+    // empty for most routes; flag the model as reasoning so validation reads it.
+    if (changed) {
+      resolved.thinkingLevelMap = map;
+      resolved.reasoning = true;
+    }
+  } catch (error) {
+    log?.warn?.('dsh-better-reasoning: thinkingLevelMap sync failed for %s/%s: %s', provider, model, error?.message ?? error);
+  }
+}
+
+/**
  * Wrap LlmRuntime so every resolved model gains a reasoning capability when the
  * adapter left it undefined. Wraps the public surface only; restores on dispose.
  */
@@ -224,6 +264,9 @@ function wrapLlm(llm, catalog, log) {
       const provider = registration?.provider?.id ?? registration?.provider ?? config?.provider;
       const reasoning = augmentReasoning(provider, config?.model, resolved.modelInfo, catalog);
       if (reasoning) {
+        // Also teach the adapter's own model map so the request path accepts
+        // the levels the picker now offers (describe/send consistency).
+        syncThinkingLevelMap(registration, provider, config?.model, reasoning, log);
         const modelInfo = withReasoning(resolved.modelInfo, reasoning);
         return { ...resolved, modelInfo, config: this.resolveCallWithInfo(config, modelInfo).config };
       }
@@ -242,7 +285,10 @@ function wrapLlm(llm, catalog, log) {
     let modelInfo = this.normalizeModelInfo(registration, config.model, adapterCall.model);
     try {
       const reasoning = augmentReasoning(config.provider, config.model, modelInfo, catalog);
-      if (reasoning) modelInfo = withReasoning(modelInfo, reasoning);
+      if (reasoning) {
+        syncThinkingLevelMap(registration, config.provider, config.model, reasoning, log);
+        modelInfo = withReasoning(modelInfo, reasoning);
+      }
     } catch (error) {
       log?.warn?.('dsh-better-reasoning: prepareCall augment failed for %s/%s: %s', config.provider, config.model, error?.message ?? error);
     }
