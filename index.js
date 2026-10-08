@@ -225,6 +225,27 @@ function syncThinkingLevelMap(registration, provider, model, reasoning, log) {
       resolved.thinkingLevelMap = map;
       resolved.reasoning = true;
     }
+
+    // Anthropic Opus 4.7+/5.x requires adaptive thinking: the endpoint rejects
+    // the legacy {type:"enabled", budget_tokens} shape with a 400 demanding
+    // {type:"adaptive"} + output_config.effort. It ALSO rejects
+    // {type:"disabled"} — the off level must omit the thinking field entirely.
+    //
+    // Custom anthropic-messages entries authored before that requirement have
+    // no compat flag, so the adapter falls into the legacy branches the moment
+    // any level is picked. Force the flag on anthropic-messages routes that
+    // resolve as reasoning, and pin thinkingLevelMap.off to null so the pi-ai
+    // "disabled" emit branch (which requires off !== null) never fires.
+    if (resolved.api === 'anthropic-messages' && resolved.reasoning === true) {
+      if (resolved.compat?.forceAdaptiveThinking !== true) {
+        resolved.compat = { ...(resolved.compat ?? {}), forceAdaptiveThinking: true };
+      }
+      // Explicit null keeps the wire silent on `off`. This must run after the
+      // efforts loop above so a just-patched map also gets its `off` key.
+      if (resolved.thinkingLevelMap && resolved.thinkingLevelMap.off !== null) {
+        resolved.thinkingLevelMap = { ...resolved.thinkingLevelMap, off: null };
+      }
+    }
   } catch (error) {
     log?.warn?.('dsh-better-reasoning: thinkingLevelMap sync failed for %s/%s: %s', provider, model, error?.message ?? error);
   }
@@ -323,6 +344,90 @@ function wrapLlm(llm, catalog, log) {
   };
 }
 
+/**
+ * Subagent reasoning-effort inheritance.
+ *
+ * Why this exists: ordinary sessions get their effort at REQUEST time through
+ * `installModelSelection`'s agent/request waterfall (the session-controller
+ * selection reads `agentDefaultModel`, which is where the configured
+ * `reasoningEffort` actually lives — `Agent.options` only carries
+ * provider/model). Delegated children compose their preset but never install
+ * that waterfall, so their config carries only what `parentAgentOptionsForDelegation`
+ * found in `parent.options` or a durable `request/header`. A parent that has
+ * not logged a header with an explicit effort hands the child nothing, and
+ * the child then validates its request without an effort at all.
+ *
+ * The fix mirrors the same waterfall for `origin: 'subagent'` agents only: if
+ * the proposed config already carries an effort, we leave it alone (explicit
+ * child selection wins); otherwise we resolve the parent's current effort for
+ * the child's resolved route. Route must match — inheriting an effort across
+ * a different provider/model would validate against the wrong capability set.
+ *
+ * Source order, first hit wins:
+ *   1. parent's latest request/header config (matches dsh-subagent's own rule)
+ *   2. parent's modelSelection projection (pending selection before its next
+ *      request, else lastUsed)
+ *   3. agentDefaultModel.currentSelection() (deployment default)
+ */
+
+function routeMatches(a, b) {
+  return a?.provider === b?.provider && a?.model === b?.model;
+}
+
+function effortOf(selection) {
+  const effort = selection?.reasoningEffort;
+  return typeof effort === 'string' && effort.length > 0 ? effort : undefined;
+}
+
+export function inheritedReasoningEffort(ctx, parentId, config) {
+  if (!parentId || !config) return undefined;
+  // Each source is isolated: a missing session or unregistered projection must
+  // not skip the remaining fallbacks.
+  try {
+    const parentSession = ctx.sessions?.get?.(parentId);
+    const headerConfig = parentSession?.requestHeader?.()?.config;
+    if (routeMatches(headerConfig, config)) {
+      const e = effortOf(headerConfig);
+      if (e !== undefined) return e;
+    }
+    const projection = ctx.sessionProjections?.stateOf?.(parentSession, 'modelSelection');
+    for (const selection of [projection?.pending, projection?.lastUsed]) {
+      if (routeMatches(selection, config)) {
+        const e = effortOf(selection);
+        if (e !== undefined) return e;
+      }
+    }
+  } catch { /* capability absence is not fatal to request admission */ }
+  try {
+    const fallback = ctx.agentDefaultModel?.currentSelection?.();
+    if (routeMatches(fallback, config)) return effortOf(fallback);
+  } catch { /* no default configured */ }
+  return undefined;
+}
+
+/**
+ * Register the per-agent inheritance waterfall for delegated children.
+ * Listens on the global `agent/created` serial event (every entered agent
+ * passes through it), then attaches the request waterfall on the child's own
+ * context so scope-filtered dispatch reaches it — the same pattern
+ * `installModelSelection` uses for ordinary sessions.
+ */
+export function installSubagentInheritance(ctx) {
+  return ctx.on?.('agent/created', ({ agent }) => {
+    try {
+      const header = agent?.session?.header;
+      if (header?.origin !== 'subagent' || header.parentSession === undefined) return;
+      const parentId = header.parentSession;
+      agent.ctx?.on?.('agent/request', async (_payload, next) => {
+        const config = await next();
+        if (config?.reasoningEffort !== undefined) return config;
+        const effort = inheritedReasoningEffort(ctx, parentId, config);
+        return effort === undefined ? config : { ...config, reasoningEffort: effort };
+      });
+    } catch { /* a child without these hooks keeps its own defaults */ }
+  });
+}
+
 export const inject = ['llm'];
 
 export const Config = z.object({
@@ -343,6 +448,7 @@ export function apply(ctx, config) {
 
   const unwrap = wrapLlm(ctx.llm, catalog, log);
   ctx.on?.('dispose', unwrap);
+  installSubagentInheritance(ctx);
 
   if (autoRefresh !== false) {
     catalog.ensure(catalogUrl).then((r) => {
